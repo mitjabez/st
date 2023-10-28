@@ -2743,3 +2743,71 @@ redraw(void)
 	tfulldirt();
 	draw();
 }
+
+void
+openurl(const char *url)
+{
+	size_t const max_cmd = 2048;
+	if(!url) {
+		fprintf(stderr, "Warning: empty url\n");
+		return;
+	}
+
+	/* account for space/quote (3) and \0 (1) and & (1) */
+	/* e.g.: xdg-open "https://st.suckless.org"& */
+	size_t const cmd_size = max_cmd + strlen(url) + 5;
+	char cmd[cmd_size];
+
+	snprintf(cmd, cmd_size, "xdg-open \"%s\"&", url);
+	system(cmd);
+}
+
+/* select and copy the previous url on screen (do nothing if there's no url).
+ * known bug: doesn't handle urls that span multiple lines (wontfix)
+ * known bug: only finds first url on line (mightfix)
+ */
+void
+copyurl(const Arg *arg) {
+	/* () and [] can appear in urls, but excluding them here will reduce false
+	 * positives when figuring out where a given url ends.
+	 */
+	static char URLCHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		"abcdefghijklmnopqrstuvwxyz"
+		"0123456789-._~:/?#@!$&'*+,;=%";
+
+	int i, row, startrow;
+	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
+	char *c, *match = NULL;
+
+	row = (sel.ob.x >= 0 && sel.nb.y > 0) ? sel.nb.y-1 : term.bot;
+	LIMIT(row, term.top, term.bot);
+	startrow = row;
+
+	/* find the start of the last url before selection */
+	do {
+		for (i = 0; i < term.col; ++i) {
+			if (term.line[row][i].u > 127) /* assume ascii */
+				continue;
+			linestr[i] = term.line[row][i].u;
+		}
+		linestr[term.col] = '\0';
+		if ((match = strstr(linestr, "http://"))
+				|| (match = strstr(linestr, "https://")))
+			break;
+		if (--row < term.top)
+			row = term.bot;
+	} while (row != startrow);
+
+	if (match) {
+		/* trim the rest of the line from the url match */
+		for (c = match; *c != '\0'; ++c)
+			if (!strchr(URLCHARS, *c)) {
+				*c = '\0';
+				break;
+			}
+
+        openurl(match);
+	}
+
+	free(linestr);
+}
